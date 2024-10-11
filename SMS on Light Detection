@@ -1,0 +1,103 @@
+//Light Sensor
+#include <HardwareSerial.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_TSL2561_U.h>
+
+#define TSL2561_ADDR (0x39)
+Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR, 12345);
+
+
+//Sim Module
+HardwareSerial SerialAT(2); // Use UART2 for AT commands
+
+const char* RECIPIENT_NUMBER = "+919142763366";  // Replace with the recipient's number
+const char* SMS_MESSAGE = "Intrusion Alert! Light detected in Asset 1";  // Replace with your message
+const char* SMSC_NUMBER = "+919845086007";  // Replace with your SMS center number
+
+void setup() {
+  Serial.begin(115200);  // Start serial communication for debugging
+  SerialAT.begin(115200, SERIAL_8N1, 16, 17);  // Start UART communication with SIM module (RX:16, TX:17)
+  
+  delay(1000);  // Wait for SerialAT to initialize
+  
+   // Check sensor initialization
+  if (!tsl.begin()) {
+    Serial.println("No TSL2561 detected. Check wiring!");
+    while (1); // Stop if sensor initialization fails
+  } else {
+    Serial.println("TSL2561 detected successfully");
+  }
+
+  tsl.enableAutoRange(true);
+  tsl.setIntegrationTime(TSL2561_INTEGRATIONTIME_13MS);
+  Serial.println("TSL2561 Light Sensor Initialized");
+}
+
+void loop() {
+
+  Wire.beginTransmission(TSL2561_ADDR);
+  if (Wire.endTransmission() != 0) {
+    Serial.println("Sensor disconnected or not responding");
+  } else {
+    sensors_event_t event;
+    tsl.getEvent(&event);
+    
+    // Check if the sensor detected valid data
+    if (event.light) {
+      Serial.print("Light Level: ");
+      Serial.print(event.light);
+      Serial.println(" lux");
+      sendSMS();
+    } else {
+      Serial.println("Sensor error or no light detected");
+    }
+  }
+
+  delay(500); // Wait for 1 second before taking the next reading
+}
+
+void sendSMS() {
+  Serial.println("Sending SMS...");
+  
+  // Set phone functionality
+  SerialAT.println("AT+CFUN=1");
+  delay(200);
+  
+  // Enable verbose error messages
+  SerialAT.println("AT+CMEE=2");
+  delay(200);
+  
+  // Set SMS text mode
+  SerialAT.println("AT+CMGF=1");
+  delay(200);
+  
+  // Set SMS center number
+  SerialAT.print("AT+CSCA=\"");
+  SerialAT.print(SMSC_NUMBER);
+  SerialAT.println("\"");
+  delay(200);
+  
+  // Send SMS
+  SerialAT.print("AT+CMGS=\"");
+  SerialAT.print(RECIPIENT_NUMBER);
+  SerialAT.println("\"");
+  delay(200);
+  
+  // Send message content
+  SerialAT.print(SMS_MESSAGE);
+  delay(100);
+  
+  // Send Ctrl+Z (ASCII 26) to indicate end of message
+  SerialAT.write(26);
+  
+  // Wait for the module to respond
+  delay(5000);
+  
+  // Check for any response from the module
+  while (SerialAT.available()) {
+    Serial.write(SerialAT.read());
+  }
+  
+  Serial.println("SMS sent!");
+}
